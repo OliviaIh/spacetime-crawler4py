@@ -1,10 +1,37 @@
 import re
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
+from tokenizer import tokenize, computeWordFrequencies
+from collections import defaultdict
 
+visited_and_words = {}  # key = url, val = # of words on page
+word_frequencies = defaultdict(int)
+
+stopwords = [
+    "a", "about", "above", "after", "again", "against", "all", "am", "an", "and",
+    "any", "are", "aren't", "as", "at", "be", "because", "been", "before", "being",
+    "below", "between", "both", "but", "by", "can't", "cannot", "could", "couldn't",
+    "did", "didn't", "do", "does", "doesn't", "doing", "don't", "down", "during",
+    "each", "few", "for", "from", "further", "had", "hadn't", "has", "hasn't", "have",
+    "haven't", "having", "he", "he'd", "he'll", "he's", "her", "here", "here's", "hers",
+    "herself", "him", "himself", "his", "how", "how's", "i", "i'd", "i'll", "i'm", "i've",
+    "if", "in", "into", "is", "isn't", "it", "it's", "its", "itself", "let's", "me", "more",
+    "most", "mustn't", "my", "myself", "no", "nor", "not", "of", "off", "on", "once", "only",
+    "or", "other", "ought", "our", "ours", "ourselves", "out", "over", "own", "same", "shan't",
+    "she", "she'd", "she'll", "she's", "should", "shouldn't", "so", "some", "such", "than",
+    "that", "that's", "the", "their", "theirs", "them", "themselves", "then", "there", "there's",
+    "these", "they", "they'd", "they'll", "they're", "they've", "this", "those", "through", "to",
+    "too", "under", "until", "up", "very", "was", "wasn't", "we", "we'd", "we'll", "we're", "we've",
+    "were", "weren't", "what", "what's", "when", "when's", "where", "where's", "which", "while", "who",
+    "who's", "whom", "why", "why's", "with", "won't", "would", "wouldn't", "you", "you'd", "you'll",
+    "you're", "you've", "your", "yours", "yourself", "yourselves"
+]
+
+
+# don't add visited links to frontier
 def scraper(url, resp):
-    print("URL: " + url)
-    print("Raw_Response.content: " + str(resp.raw_response.content)) 
+    # print("URL: " + url)
+    # print("Raw_Response.content: " + str(resp.raw_response.content)) 
     links = extract_next_links(url, resp)
     return [link for link in links if is_valid(link)]
 
@@ -24,53 +51,77 @@ def extract_next_links(url, resp):
 
     hyperlinks_list = []
     if (resp.status == 200):
-        
-        # scrape links from resp.raw_response.content
 
-        soup = BeautifulSoup(resp.raw_response.content, 'html.parser')
+        # check if page already visited
+        if url in visited_and_words:
+            return hyperlinks_list
         
+        # scrape text from soup
+        soup = BeautifulSoup(resp.raw_response.content, 'html.parser')
+
+        tokens = tokenize(soup.find_all(text=True))
+        visited_and_words[url] = len(tokens)
+
+        # count word frequencies from tokens
+        freqs = computeWordFrequencies(tokens)
+
+        # add to word_frequencies
+        for word in freqs:
+            if word not in stopwords:
+                word_frequencies[word] += freqs[word]
+                
+        # scrape links from soup
         for link in soup.find_all('a'):
-            href = link.get('href')
-            print(href)
-            new_link = ""
-            
-            if href[:2] == "//":
-                # if link href starts with //, add parsed_url.scheme + ':' to the front
-                # <a href="//www.ics.uci.edu/ugrad/livechat.php">
-                new_link = parsed_url.scheme + ':' + href
-            elif href[0] == "/":
-                # if link href starts with /, it's a relative link --> add base URL to front
-                # <scheme>://<netloc><link href>
-                new_link = parsed_url.scheme + '://' + parsed_url.netloc + href
-            elif href[0] == "#":
-                # if link href starts with #, it's a fragment of url --> do nothing
-                # #carouselExampleIndicators
-                # <a href="#" id="back2Top" title="Back to top">
-                continue
-            elif href.find('://') == -1:
-                if href.find(':') == -1:
-                    # employment/employ_faculty.php
-                    new_link = parsed_url.scheme + '://' + parsed_url.netloc + '/' + href
-                else:
-                    # mailto:ichair@ics.uci.edu
-                    # tel: ...
-                    # data ...
-                    # urn:isbn:0451450523
+            try:
+                # print("LINK: " + link)
+                href = link.get('href')
+                # print(href)
+                new_link = ""
+
+                if href == None:
                     continue
-            else:
-                # https://campusgroups.uci.edu/rsvp?id=1841688
-                new_link = href
-            
-            # check if there is a fragment (aka check if contains #); if so, strip from the url
-            fragment_index = new_link.find("#") 
-            if fragment_index != -1:
-                new_link = new_link[:fragment_index]
-    
-            hyperlinks_list.append(new_link)
+                
+                if href[:2] == "//":
+                    # if link href starts with //, add parsed_url.scheme + ':' to the front
+                    # <a href="//www.ics.uci.edu/ugrad/livechat.php">
+                    new_link = parsed_url.scheme + ':' + href
+                elif href[0] == "/":
+                    # if link href starts with /, it's a relative link --> add base URL to front
+                    # <scheme>://<netloc><link href>
+                    new_link = parsed_url.scheme + '://' + parsed_url.netloc + href
+                elif href[0] == "#":
+                    # if link href starts with #, it's a fragment of url --> do nothing
+                    # #carouselExampleIndicators
+                    # <a href="#" id="back2Top" title="Back to top">
+                    continue
+                elif href.find('://') == -1:
+                    if href.find(':') == -1:
+                        # employment/employ_faculty.php
+                        new_link = parsed_url.scheme + '://' + parsed_url.netloc + '/' + href
+                    else:
+                        # mailto:ichair@ics.uci.edu
+                        # tel: ...
+                        # data ...
+                        # urn:isbn:0451450523
+                        continue
+                else:
+                    # https://campusgroups.uci.edu/rsvp?id=1841688
+                    new_link = href
+                
+                # check if there is a fragment (aka check if contains #); if so, strip from the url
+                fragment_index = new_link.find("#") 
+                if fragment_index != -1:
+                    new_link = new_link[:fragment_index]
+
+                # add new_link to frontier
+                hyperlinks_list.append(new_link)
+            except TypeError:
+                print("HREF is null")
     
     # else check error if status is not 200
 
     return hyperlinks_list
+
 
 def is_valid(url):
     # Decide whether to crawl this url or not. 
@@ -78,7 +129,7 @@ def is_valid(url):
     # There are already some conditions that return False.
     try:
         parsed = urlparse(url)
-        print(parsed)
+        # print(parsed)
 
         if parsed.scheme not in set(["http", "https"]):
             return False
@@ -103,11 +154,9 @@ def is_valid(url):
         return False
                 
         
-        
     except TypeError:
         print ("TypeError for ", parsed)
         raise
-
 
 if __name__ == "__main__":
     print(is_valid("http://www.openlab.ics.uci.edu"))
