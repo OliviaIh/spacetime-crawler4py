@@ -1,12 +1,7 @@
 import sys
 
-BUFFER_SIZE = 100   # number of characters to read at one time from file
-
 '''
-Turns the given file into a list of token strings. 
-
-Reads BUFFER_SIZE number of characters at a time from the given file, breaking up the file into tokens
-of only alphanumeric English characters. 
+Turns the given list of strings into a list of token strings. 
 
 TIME COMPLEXITY: O(n)
 Let n be the size of the file. Reading the file in BUFFER_SIZE chunks is O(n) because you are reading each
@@ -18,34 +13,26 @@ Since these operations are called on single characters or small fragments of the
 some O(kn) time complexity, where k is some constant. Thus, the overall time complexity of tokenize() is
 O((2+k)n), which can be simplified to O(n).
 '''
-def tokenize(file: str):
+def tokenize(content):
     tokens = []
     current_token = ""
 
-    with open(file, 'r') as f:
-        while True:
-            buffer = f.read(BUFFER_SIZE)    # read BUFFER_SIZE number of chars from f
-
-            if buffer == '':
-                break   # EOF
-
-            # not EOF
-            # go through each character in buffer
-            for c in buffer:
-                # isalnum() checks for alphanumeric characters and isascii() checks for ASCII/English characters
-                if not c.isalnum() or not c.isascii() or c != "'":
-                    # only add to tokens if non-empty string
-                    if len(current_token) > 0:
-                        tokens.append(current_token)
-                    
-                    current_token = ""
-                else:
-                    current_token += c.lower()  # make everything lowercase so tokens are case-insensitive
-
-            if len(buffer) < BUFFER_SIZE:
-                # no more text to read after this buffer --> whatever is in current_token is the last token
+    for s in content:
+        for c in s:
+            # isalnum() checks for alphanumeric characters and isascii() checks for ASCII/English characters
+            if (c.isalnum() and c.isascii()) or c == "'":
+                current_token += c.lower()
+            else:
+                # only add to tokens if non-empty string
                 if len(current_token) > 0:
                     tokens.append(current_token)
+                    
+                current_token = ""                
+        
+        if len(current_token) > 0:
+            tokens.append(current_token)
+
+        current_token = ""
         
     return tokens
 
@@ -125,4 +112,4 @@ def runPartA():
             print(f"Error with reading {file}.")
 
 if __name__ == '__main__':
-    runPartA()
+    print(tokenize(["testing yes", "hello hello hello", "hello world", "shreshta's cool"]))

@@ -7,7 +7,7 @@ from collections import defaultdict
 visited_and_words = {}  # key = url, val = # of words on page
 word_frequencies = defaultdict(int)
 
-stopwords = [
+stopwords = {
     "a", "about", "above", "after", "again", "against", "all", "am", "an", "and",
     "any", "are", "aren't", "as", "at", "be", "because", "been", "before", "being",
     "below", "between", "both", "but", "by", "can't", "cannot", "could", "couldn't",
@@ -25,13 +25,17 @@ stopwords = [
     "were", "weren't", "what", "what's", "when", "when's", "where", "where's", "which", "while", "who",
     "who's", "whom", "why", "why's", "with", "won't", "would", "wouldn't", "you", "you'd", "you'll",
     "you're", "you've", "your", "yours", "yourself", "yourselves"
-]
+    }
 
 
 # don't add visited links to frontier
 def scraper(url, resp):
-    # print("URL: " + url)
-    # print("Raw_Response.content: " + str(resp.raw_response.content)) 
+    # TO DOS:
+    #   - determine low information value (min: 300 words or so or call is_valid in extract_next_links)
+    #   - check redirect works properly
+    #   - simhash/compare similarities with no information (Detect and avoid sets of similar pages with no information)
+    #   - check this requirement: detect and avoid crawling very large files, especially if they have low information value
+
     links = extract_next_links(url, resp)
     return [link for link in links if is_valid(link)]
 
@@ -50,20 +54,32 @@ def extract_next_links(url, resp):
     parsed_url = urlparse(url)
 
     hyperlinks_list = []
-    if (resp.status == 200):
+    if (resp.status < 400 and resp.status >= 200):
+        crawlURL = url
 
         # check if page already visited
-        if url in visited_and_words:
+        if crawlURL in visited_and_words:
             return hyperlinks_list
         
+        # if the url is a redirect code, do not add it to the visited_and_words, but will continue to parse the content
+        if resp.status < 300:
+            visited_and_words[url] = 0
+
         # scrape text from soup
         soup = BeautifulSoup(resp.raw_response.content, 'html.parser')
-
-        tokens = tokenize(soup.find_all(text=True))
+        tokens = soup.get_text().split('\n') 
+        tokens = tokenize([t for t in tokens if len(t.strip()) > 0])
+                
+        # print(tokens)
         visited_and_words[url] = len(tokens)
 
+        # check if the url is dead (no tokens), returns the hyperlink list
+        if len(tokens) == 0:
+            return hyperlinks_list
+            
         # count word frequencies from tokens
         freqs = computeWordFrequencies(tokens)
+        # print(freqs)
 
         # add to word_frequencies
         for word in freqs:
@@ -92,7 +108,7 @@ def extract_next_links(url, resp):
                 elif href[0] == "#":
                     # if link href starts with #, it's a fragment of url --> do nothing
                     # #carouselExampleIndicators
-                    # <a href="#" id="back2Top" title="Back to top">
+                    # <a href="#" id="back2Top" title="Back to top"> 
                     continue
                 elif href.find('://') == -1:
                     if href.find(':') == -1:
