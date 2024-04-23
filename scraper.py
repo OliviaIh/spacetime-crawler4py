@@ -152,7 +152,7 @@ def extract_next_links(url, resp):
                 simhash1 = simhash(tokens)
                 simhash2 = simhash(new_link_tokens)
 
-                if simhash_values == {}:
+                if simhash_values == {} or :
                     simhash_values[tokens] = simhash(tokens)
                     hyperlinks_list.append(new_link)
                 else:
