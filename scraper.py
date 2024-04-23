@@ -30,14 +30,16 @@ stopwords = {
 
 # don't add visited links to frontier
 def scraper(url, resp):
-    # TO DOS:
+    # DONE:
     #   - determine low information value (min: 300 words or so or call is_valid in extract_next_links)
+    #   - check this requirement: detect and avoid crawling very large files, especially if they have low information value
+    # TO DOS:
     #   - check redirect works properly
     #   - simhash/compare similarities with no information (Detect and avoid sets of similar pages with no information)
-    #   - check this requirement: detect and avoid crawling very large files, especially if they have low information value
 
     links = extract_next_links(url, resp)
-    return [link for link in links if is_valid(link)]
+    # return [link for link in links if is_valid(link)]
+    return links
 
 def extract_next_links(url, resp):
     # Implementation required.
@@ -69,9 +71,6 @@ def extract_next_links(url, resp):
         soup = BeautifulSoup(resp.raw_response.content, 'html.parser')
         tokens = soup.get_text().split('\n') 
         tokens = tokenize([t for t in tokens if len(t.strip()) > 0])
-                
-        # print(tokens)
-        visited_and_words[url] = len(tokens)
 
         # check if the url is dead (no tokens), returns the hyperlink list
         if len(tokens) == 0:
@@ -79,7 +78,17 @@ def extract_next_links(url, resp):
             
         # count word frequencies from tokens
         freqs = computeWordFrequencies(tokens)
+        print(f"UNIQUE TOKENS = {len(freqs.items())}")
         # print(freqs)
+
+        # check if page is too small (<300 unique tokens) or too large (>15,000 unique tokens)
+        unique_tokens = len(freqs.keys())
+        if unique_tokens < 300 or unique_tokens > 15000:
+            print('TOO SMALL/LARGE')
+            return hyperlinks_list
+
+        # print(tokens)
+        visited_and_words[url] = len(tokens)
 
         # add to word_frequencies
         for word in freqs:
@@ -94,7 +103,7 @@ def extract_next_links(url, resp):
                 # print(href)
                 new_link = ""
 
-                if href == None:
+                if not href or not is_valid(href):
                     continue
                 
                 if href[:2] == "//":
@@ -137,6 +146,9 @@ def extract_next_links(url, resp):
     # else check error if status is not 200
 
     return hyperlinks_list
+
+def simhash():
+    pass
 
 
 def is_valid(url):
