@@ -7,7 +7,7 @@ from simhash import simhash, is_near_duplicate
 from collections import defaultdict
 
 visited_and_words = {}  # key = url, val = # of words on page
-simhash_values = {}
+simhash_values = []
 word_frequencies = defaultdict(int)
 
 stopwords = {
@@ -152,14 +152,17 @@ def extract_next_links(url, resp):
                 simhash1 = simhash(tokens)
                 simhash2 = simhash(new_link_tokens)
 
-                if simhash_values == {} or :
-                    simhash_values[tokens] = simhash(tokens)
+                if len(simhash_values) < 5:
+                    simhash_values.append(simhash(tokens))
                     hyperlinks_list.append(new_link)
                 else:
                     current_simhash = simhash(tokens)
-                    for token, prev_simhash in simhash_values:
-                        if not is_near_duplicate(current_simhash, prev_simhash, 1):
+                    for x in simhash_values:
+                        if not is_near_duplicate(current_simhash, x, 1):
                             return
+                        else:
+                            simhash_values.pop(0)
+                            simhash_values.append(current_simhash)
                     hyperlinks_list.append(new_link)
             except TypeError:
                 print("HREF is null")
