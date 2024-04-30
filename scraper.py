@@ -1,9 +1,10 @@
 import re
 from urllib.parse import urlparse
-import time
+import urllib.robotparser
+from simhash import Simhash
+from time import sleep
 from bs4 import BeautifulSoup
 from tokenizer import tokenize, computeWordFrequencies
-from simhash import simhash, is_near_duplicate
 from collections import defaultdict
 
 visited_and_words = {}  # key = url, val = # of words on page
@@ -36,9 +37,10 @@ def scraper(url, resp):
     # DONE:
     #   - determine low information value (min: 300 words or so or call is_valid in extract_next_links)
     #   - check this requirement: detect and avoid crawling very large files, especially if they have low information value
+    #   - simhash/compare similarities with no information (Detect and avoid sets of similar pages with no information)
     # TO DOS:
     #   - check redirect works properly
-    #   - simhash/compare similarities with no information (Detect and avoid sets of similar pages with no information)
+    #   - wrtie occasionally to results.txt in case of server failure
 
     links = extract_next_links(url, resp)
     # return [link for link in links if is_valid(link)]
@@ -56,13 +58,23 @@ def extract_next_links(url, resp):
     # Return a list with the hyperlinks (as strings) scrapped from resp.raw_response.content
 
     # ParseResult(scheme='http', netloc='www.openlab.ics.uci.edu', path='', params='', query='', fragment='')
-    # delay = _check_politness(url)
-    # if delay < 0:
-    #     return
-    # sleep(delay) # maintains politness before parsing url
     parsed_url = urlparse(url)
+    robots_url = f"{parsed_url.scheme}://{parsed_url.netloc}/robots.txt"
 
     hyperlinks_list = []
+
+    robots = urllib.robotparser.RobotFileParser()
+    robots.set_url(robots_url)
+    robots.read()
+    if robots.can_fetch("*", url):
+        robots_delay = robots.request_rate("*")
+        delay = robots_delay.seconds if robots_delay else 0.5
+        sleep(delay)
+    
+    else:
+        return hyperlinks_list
+
+
     if (resp.status < 400 and resp.status >= 200):
         crawlURL = url
 
@@ -102,6 +114,16 @@ def extract_next_links(url, resp):
         for word in freqs:
             if word not in stopwords:
                 word_frequencies[word] += freqs[word]
+        
+        # check if similar to previous pages
+        current = Simhash(tokens).value
+        # print(f"SIMHASH VALUES: {simhash_values}")
+        if current not in simhash_values:
+            simhash_values.append(current)
+        else:
+            # print("simhash")
+            # print(hyperlinks_list)
+            return hyperlinks_list
                 
         # scrape links from soup
         for link in soup.find_all('a'):
@@ -147,28 +169,15 @@ def extract_next_links(url, resp):
                     new_link = new_link[:fragment_index]
 
                 # add new_link to frontier
+                hyperlinks_list.append(new_link)
+            
                 
-
-                simhash1 = simhash(tokens)
-                simhash2 = simhash(new_link_tokens)
-
-                if len(simhash_values) < 5:
-                    simhash_values.append(simhash(tokens))
-                    hyperlinks_list.append(new_link)
-                else:
-                    current_simhash = simhash(tokens)
-                    for x in simhash_values:
-                        if not is_near_duplicate(current_simhash, x, 1):
-                            return
-                        else:
-                            simhash_values.pop(0)
-                            simhash_values.append(current_simhash)
-                    hyperlinks_list.append(new_link)
-            except TypeError:
+            except TypeError as e:
                 print("HREF is null")
+                # print(e.with_traceback())
     
     # else check error if status is not 200
-
+    # print(hyperlinks_list)
     return hyperlinks_list
 
 def is_valid(url):
@@ -210,28 +219,6 @@ def _get_content(web_content):
     tokens = soup.get_text().split('\n') 
     tokens = tokenize([t for t in tokens if len(t.strip()) > 0])
     return tokens
-
-# def _check_politness(url):
-#     # checks if the url has a robots.txt file and returns a time-delay to maintain politness
-#     url += "/robots.txt" if url[-1] != "/" else "robots.txt"
-
-#     # make http get request
-#     try:
-#         # from https://docs.python.org/3/howto/urllib2.html
-#         with urllib.request.urlopen('http://python.org/') as response:
-#             for line in response: 
-#                 # check the allow/disallow
-#                 if line.contains("IR US24"):
-#                     return -1
-#                 # if line.contains("Crawl-delay"):
-#                     # return the value
-
-#             return 1
-#     except urllib.error.URLError as e: # is this the correct error type?
-#         return 1
-
-
-
 
 
 

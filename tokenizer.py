@@ -18,6 +18,7 @@ def tokenize(content):
     current_token = ""
 
     for s in content:
+        s = s.replace(u'\xa0', u' ')
         for c in s:
             # isalnum() checks for alphanumeric characters and isascii() checks for ASCII/English characters
             if (c.isalnum() and c.isascii()) or c == "'":

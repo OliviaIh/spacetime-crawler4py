@@ -33,15 +33,16 @@ class Worker(Thread):
             self.frontier.mark_url_complete(tbd_url)
             time.sleep(self.config.time_delay)
 
-        with open('results.txt', 'a') as f:
+        with open('results.txt', 'w') as f:
             sorted_visited_and_words = sorted(scraper.visited_and_words.items(), key=lambda item: item[1], reverse=True)
             print(sorted_visited_and_words)
+            f.write('WORD COUNTS')
             for item in sorted_visited_and_words:
                 f.write(f"{item[0]}: {item[1]}\n")
             
             f.write('\nWORD FREQUENCIES\n')
 
-            sorted_word_frequencies = sorted(scraper.word_frequencies.items(), key=lambda item: item[1], reverse=True)
+            sorted_word_frequencies = sorted(scraper.word_frequencies.items(), key=lambda item: item[1], reverse=True)[:50]
             print(sorted_word_frequencies)
             for item in sorted_word_frequencies:
                 f.write(f"{item[0]}: {item[1]}\n")
