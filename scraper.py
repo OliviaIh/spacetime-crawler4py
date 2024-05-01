@@ -9,7 +9,8 @@ from collections import defaultdict
 
 visited_and_words = {}  # key = url, val = # of words on page
 simhash_values = []
-word_frequencies = defaultdict(int)
+word_frequencies = defaultdict(int) # key = word, val = frequency
+num_visited = int()
 
 stopwords = {
     "a", "about", "above", "after", "again", "against", "all", "am", "an", "and",
@@ -34,20 +35,9 @@ stopwords = {
 
 # don't add visited links to frontier
 def scraper(url, resp):
-    # DONE:
-    #   - determine low information value (min: 300 words or so or call is_valid in extract_next_links)
-    #   - check this requirement: detect and avoid crawling very large files, especially if they have low information value
-    #   - simhash/compare similarities with no information (Detect and avoid sets of similar pages with no information)
-    # TO DOS:
-    #   - check redirect works properly
-    #   - wrtie occasionally to results.txt in case of server failure
-
-    links = extract_next_links(url, resp)
-    # return [link for link in links if is_valid(link)]
-    return links
+    return extract_next_links(url, resp)
 
 def extract_next_links(url, resp):
-    # Implementation required.
     # url: the URL that was used to get the page
     # resp.url: the actual url of the page
     # resp.status: the status code returned by the server. 200 is OK, you got the page. Other numbers mean that there was some kind of problem.
@@ -59,78 +49,82 @@ def extract_next_links(url, resp):
 
     # ParseResult(scheme='http', netloc='www.openlab.ics.uci.edu', path='', params='', query='', fragment='')
     parsed_url = urlparse(url)
-    robots_url = f"{parsed_url.scheme}://{parsed_url.netloc}/robots.txt"
-
-    hyperlinks_list = []
-
-    robots = urllib.robotparser.RobotFileParser()
-    robots.set_url(robots_url)
-    robots.read()
-    if robots.can_fetch("*", url):
-        robots_delay = robots.request_rate("*")
-        delay = robots_delay.seconds if robots_delay else 0.5
-        sleep(delay)
     
-    else:
-        return hyperlinks_list
-
-
+    hyperlinks_list = []
+    politeness_delay = None
+    
+    # parse robots.txt to check for politness delay
+    try:
+        robots_url = f"{parsed_url.scheme}://{parsed_url.netloc}/robots.txt"
+        robots = urllib.robotparser.RobotFileParser()
+        robots.set_url(robots_url)
+        robots.read()
+        
+        # if url can be fetched, request politness delay in seconds
+        if robots.can_fetch("*", url):
+            robots_delay = robots.request_rate("*")
+            # if the delay does not eexist, default to 0.5 from config.ini
+            politeness_delay = robots_delay.seconds if robots_delay else 0.5
+            print('POLITENESS DELAY: ' + str(politeness_delay))
+        
+        # url cannot be scraped, return
+        else:
+            return hyperlinks_list, politeness_delay
+        
+    except Exception as e:
+        print(e)
+    
+    # checks if page is responsive 
     if (resp.status < 400 and resp.status >= 200):
         crawlURL = url
 
         # check if page already visited
         if crawlURL in visited_and_words:
-            return hyperlinks_list
-        
-        # if the url is a redirect code, do not add it to the visited_and_words, but will continue to parse the content
-        if resp.status < 300:
-            visited_and_words[url] = 0
+            return hyperlinks_list, politeness_delay
 
         # scrape text from soup
-        # tokens = _get_content(resp.raw_response.content)
         soup = BeautifulSoup(resp.raw_response.content, 'html.parser')
+        
+        # retrieve tokens from text
         tokens = soup.get_text().split('\n') 
         tokens = tokenize([t for t in tokens if len(t.strip()) > 0])
 
-        # check if the url is dead (no tokens), returns the hyperlink list
+        # check if the url is dead (no tokens), returns the hyperlink list and politness delay
         if len(tokens) == 0:
-            return hyperlinks_list
+            return hyperlinks_list, politeness_delay
             
         # count word frequencies from tokens
         freqs = computeWordFrequencies(tokens)
         print(f"UNIQUE TOKENS = {len(freqs.items())}")
-        # print(freqs)
 
-        # check if page is too small (<300 unique tokens) or too large (>15,000 unique tokens)
+        # check if page is too small (<100 unique tokens) or too large (>15,000 unique tokens)
         unique_tokens = len(freqs.keys())
-        if unique_tokens < 300 or unique_tokens > 15000:
+        if unique_tokens < 100 or unique_tokens > 15000:
             print('TOO SMALL/LARGE')
-            return hyperlinks_list
+            return hyperlinks_list, politeness_delay
 
-        # print(tokens)
-        visited_and_words[url] = len(tokens)
+        # if the url is a redirect code, do not add it to the visited_and_words, but will continue to parse the content
+        if resp.status < 300:
+            visited_and_words[url] = len(tokens)
+            global num_visited
+            num_visited += 1
 
         # add to word_frequencies
         for word in freqs:
             if word not in stopwords:
                 word_frequencies[word] += freqs[word]
         
-        # check if similar to previous pages
+        # check if similar to previous pages using Simhash
         current = Simhash(tokens).value
-        # print(f"SIMHASH VALUES: {simhash_values}")
         if current not in simhash_values:
             simhash_values.append(current)
         else:
-            # print("simhash")
-            # print(hyperlinks_list)
-            return hyperlinks_list
+            return hyperlinks_list, politeness_delay     # url is similar to previous
                 
         # scrape links from soup
         for link in soup.find_all('a'):
             try:
-                # print("LINK: " + link)
                 href = link.get('href')
-                # print(href)
                 new_link = ""
 
                 if not href or not is_valid(href):
@@ -138,29 +132,29 @@ def extract_next_links(url, resp):
                 
                 if href[:2] == "//":
                     # if link href starts with //, add parsed_url.scheme + ':' to the front
-                    # <a href="//www.ics.uci.edu/ugrad/livechat.php">
+                        # ex: <a href="//www.ics.uci.edu/ugrad/livechat.php">
                     new_link = parsed_url.scheme + ':' + href
                 elif href[0] == "/":
                     # if link href starts with /, it's a relative link --> add base URL to front
-                    # <scheme>://<netloc><link href>
+                        # ex: <scheme>://<netloc><link href>
                     new_link = parsed_url.scheme + '://' + parsed_url.netloc + href
                 elif href[0] == "#":
                     # if link href starts with #, it's a fragment of url --> do nothing
-                    # #carouselExampleIndicators
-                    # <a href="#" id="back2Top" title="Back to top"> 
+                        # ex: #carouselExampleIndicators
+                        #     <a href="#" id="back2Top" title="Back to top"> 
                     continue
                 elif href.find('://') == -1:
                     if href.find(':') == -1:
-                        # employment/employ_faculty.php
+                        # ex: employment/employ_faculty.php
                         new_link = parsed_url.scheme + '://' + parsed_url.netloc + '/' + href
                     else:
-                        # mailto:ichair@ics.uci.edu
-                        # tel: ...
-                        # data ...
-                        # urn:isbn:0451450523
+                        # ex: mailto:ichair@ics.uci.edu
+                        #     tel: ...
+                        #     data ...
+                        #     urn:isbn:0451450523
                         continue
                 else:
-                    # https://campusgroups.uci.edu/rsvp?id=1841688
+                    # ex: https://campusgroups.uci.edu/rsvp?id=1841688
                     new_link = href
                 
                 # check if there is a fragment (aka check if contains #); if so, strip from the url
@@ -171,14 +165,11 @@ def extract_next_links(url, resp):
                 # add new_link to frontier
                 hyperlinks_list.append(new_link)
             
-                
             except TypeError as e:
-                print("HREF is null")
-                # print(e.with_traceback())
+                print(e)
     
     # else check error if status is not 200
-    # print(hyperlinks_list)
-    return hyperlinks_list
+    return hyperlinks_list, politeness_delay
 
 def is_valid(url):
     # Decide whether to crawl this url or not. 
@@ -186,7 +177,6 @@ def is_valid(url):
     # There are already some conditions that return False.
     try:
         parsed = urlparse(url)
-        # print(parsed)
 
         if parsed.scheme not in set(["http", "https"]):
             return False
@@ -213,12 +203,6 @@ def is_valid(url):
     except TypeError:
         print ("TypeError for ", parsed)
         raise
-
-def _get_content(web_content):
-    soup = BeautifulSoup(web_content, 'html.parser')
-    tokens = soup.get_text().split('\n') 
-    tokens = tokenize([t for t in tokens if len(t.strip()) > 0])
-    return tokens
 
 
 

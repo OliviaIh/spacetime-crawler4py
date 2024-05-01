@@ -16,7 +16,22 @@ class Worker(Thread):
         assert {getsource(scraper).find(req) for req in {"from requests import", "import requests"}} == {-1}, "Do not use requests in scraper.py"
         assert {getsource(scraper).find(req) for req in {"from urllib.request import", "import urllib.request"}} == {-1}, "Do not use urllib.request in scraper.py"
         super().__init__(daemon=True)
-        
+
+    def _write_to_results_file(self):
+        with open('results.txt', 'w') as f:
+            sorted_visited_and_words = sorted(scraper.visited_and_words.items(), key=lambda item: item[1], reverse=True)
+            # print(sorted_visited_and_words)
+            f.write('WORD COUNTS\n')
+            for item in sorted_visited_and_words:
+                f.write(f"{item[0]}: {item[1]}\n")
+            
+            f.write('\nWORD FREQUENCIES\n')
+
+            sorted_word_frequencies = sorted(scraper.word_frequencies.items(), key=lambda item: item[1], reverse=True)[:50]
+            # print(sorted_word_frequencies)
+            for item in sorted_word_frequencies:
+                f.write(f"{item[0]}: {item[1]}\n")
+
     def run(self):
         while True:
             tbd_url = self.frontier.get_tbd_url()
@@ -27,22 +42,15 @@ class Worker(Thread):
             self.logger.info(
                 f"Downloaded {tbd_url}, status <{resp.status}>, "
                 f"using cache {self.config.cache_server}.")
-            scraped_urls = scraper.scraper(tbd_url, resp)
+            scraped_urls, politeness_delay = scraper.scraper(tbd_url, resp)
             for scraped_url in scraped_urls:
                 self.frontier.add_url(scraped_url)
             self.frontier.mark_url_complete(tbd_url)
-            time.sleep(self.config.time_delay)
+            time.sleep((politeness_delay if politeness_delay else self.config.time_delay))  # politeness delay
 
-        with open('results.txt', 'w') as f:
-            sorted_visited_and_words = sorted(scraper.visited_and_words.items(), key=lambda item: item[1], reverse=True)
-            print(sorted_visited_and_words)
-            f.write('WORD COUNTS')
-            for item in sorted_visited_and_words:
-                f.write(f"{item[0]}: {item[1]}\n")
-            
-            f.write('\nWORD FREQUENCIES\n')
+            if scraper.num_visited % 25 == 0:
+                print('WRITING TO FILE')
+                self._write_to_results_file()
 
-            sorted_word_frequencies = sorted(scraper.word_frequencies.items(), key=lambda item: item[1], reverse=True)[:50]
-            print(sorted_word_frequencies)
-            for item in sorted_word_frequencies:
-                f.write(f"{item[0]}: {item[1]}\n")
+        print('FINAL WRITE')
+        self._write_to_results_file()
